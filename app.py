@@ -34,7 +34,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-    model_name='models/gemini-2.5-flash-lite',
+    model_name='models/gemini-2.5-flash',
     generation_config=generation_config
 )
 
