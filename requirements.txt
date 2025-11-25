@@ -1,0 +1,8 @@
+Flask
+google-generativeai
+PyPDF2
+gunicorn
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+gspread
