@@ -42,29 +42,106 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        /* --- 同意画面 (省略可) --- */
+        /* --- 同意画面 (Disclaimer Overlay) --- */
         #disclaimer-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.85); backdrop-filter: blur(5px);
-            z-index: 9999; display: flex; align-items: center; justify-content: center;
-            padding: 20px; transition: opacity 0.5s ease, visibility 0.5s;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); /* 背景を少し透かす */
+            backdrop-filter: blur(5px);
+            z-index: 9999; /* 最前面 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            transition: opacity 0.5s ease, visibility 0.5s;
         }
+
         .disclaimer-box {
-            background-color: var(--accent-color); border: var(--border-width) solid #000;
-            padding: 2rem; max-width: 500px; width: 100%;
-            box-shadow: 10px 10px 0 #fff; text-align: left; transform: rotate(-1deg);
+            background-color: var(--accent-color);
+            border: var(--border-width) solid #000;
+            padding: 2rem;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 10px 10px 0 #fff;
+            text-align: left;
+            transform: rotate(-1deg);
         }
+
         .disclaimer-title {
-            font-size: 1.5rem; font-weight: 800; margin-bottom: 1.5rem;
-            border-bottom: 3px solid #000; padding-bottom: 10px; text-transform: uppercase;
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            border-bottom: 3px solid #000;
+            padding-bottom: 10px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
+
+        .disclaimer-content {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 2rem;
+        }
+
+        .disclaimer-item {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .disclaimer-icon {
+            background: #000;
+            color: var(--accent-color);
+            min-width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
         .agree-button {
-            width: 100%; padding: 15px; background-color: #000; color: #fff;
-            font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.1rem;
-            border: none; cursor: pointer; text-transform: uppercase;
-            box-shadow: 5px 5px 0 rgba(255,255,255,0.5); transition: transform 0.1s;
+            width: 100%;
+            padding: 15px;
+            background-color: #000;
+            color: #fff;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 800;
+            font-size: 1.1rem;
+            border: none;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 5px 5px 0 rgba(255,255,255,0.5);
+            transition: transform 0.1s, box-shadow 0.1s;
         }
-        .agree-button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 rgba(255,255,255,0.5); }
+
+        .agree-button:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 7px 7px 0 rgba(255,255,255,0.5);
+        }
+
+        .agree-button:active {
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0 rgba(255,255,255,0.5);
+        }
+
+        /* --- カーソル軌跡 --- */
+        .cursor-trail {
+            position: fixed; width: 12px; height: 12px;
+            background-color: var(--text-color);
+            pointer-events: none; z-index: 9990;
+            animation: fadeOut 0.6s forwards;
+        }
+        body.dark-mode .cursor-trail { background-color: var(--accent-color); }
+
+        @keyframes fadeOut {
+            0% { opacity: 0.6; transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0) rotate(90deg); }
+        }
 
         /* --- ヘッダー --- */
         header {
@@ -77,6 +154,7 @@
             position: relative;
             z-index: 10;
             box-shadow: 0 4px 0 rgba(0,0,0,0.1);
+            transition: background-color 0.3s, border-color 0.3s;
             flex-shrink: 0;
         }
         body.dark-mode header { background-color: #000; box-shadow: 0 4px 0 rgba(255,255,255,0.1); }
@@ -84,15 +162,25 @@
         .back-button-container {
             position: absolute; left: 1rem; top: 50%; transform: translateY(-50%);
         }
+
         .back-button {
             text-decoration: none; color: #000; font-weight: 800;
             border: var(--border-width) solid var(--text-color);
             padding: 0.4rem 0.8rem; background: #fff;
+            transition: all 0.2s; display: inline-flex; align-items: center; gap: 0.5rem;
             box-shadow: 3px 3px 0 var(--text-color); font-size: 0.8rem;
-            display: inline-flex; align-items: center; gap: 5px;
+            white-space: nowrap;
+        }
+        body.dark-mode .back-button {
+            border-color: #fff; box-shadow: 3px 3px 0 #fff;
+            background-color: var(--accent-color); color: #000;
+        }
+        .back-button:active {
+            transform: translate(2px, 2px) translateY(-50%);
+            box-shadow: none;
         }
 
-        /* ★役割切り替えタブ (PC用: 右上) */
+        /* ★役割切り替えタブ (ここを追加) */
         .role-container {
             position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
             display: flex; gap: 5px;
@@ -118,33 +206,56 @@
             box-shadow: 3px 3px 0 #fff;
         }
 
+        /* タイトル */
         h1 {
             font-size: 2rem; font-weight: 800; text-transform: uppercase;
             letter-spacing: -1px; line-height: 1;
             background-color: var(--accent-color); color: #000;
-            padding: 0.5rem 1rem; border: var(--border-width) solid var(--text-color);
+            padding: 0.5rem 1rem; 
+            border: var(--border-width) solid var(--text-color);
             transform: perspective(1000px) rotateX(0deg) rotateY(0deg) skew(-5deg);
-            transition: all 0.3s; user-select: none; 
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            user-select: none; 
             box-shadow: 8px 8px 0 rgba(0,0,0,0.2);
-            display: inline-block; cursor: pointer;
-            max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            display: inline-block; margin: 0 auto; cursor: pointer;
+            text-align: center;
+            max-width: 60%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
+        
         h1:hover {
-            background-color: #000; color: #fff; border-color: #000;
+            background-color: #000; 
+            color: #fff; 
+            border-color: #000;
             transform: perspective(1000px) rotateX(10deg) rotateY(-5deg) scale(1.05) skew(-5deg) translateY(-5px);
             box-shadow: 15px 20px 0 rgba(255, 247, 0, 0.8);
         }
+
         body.dark-mode h1 { border-color: #fff; box-shadow: 8px 8px 0 rgba(255,255,255,0.2); }
+        body.dark-mode h1:hover {
+            border-color: var(--accent-color); 
+            background-color: #fff; 
+            color: #000;
+            box-shadow: 15px 20px 0 var(--accent-color);
+        }
 
         /* --- チャットエリア --- */
         #chat-container {
             flex: 1; overflow-y: auto; padding: 1rem;
             display: flex; flex-direction: column; gap: 1rem;
             scroll-behavior: smooth; background-color: rgba(255, 255, 255, 0.9);
+            transition: background-color 0.3s;
+            -webkit-overflow-scrolling: touch;
         }
         body.dark-mode #chat-container { background-color: rgba(20, 20, 20, 0.95); }
 
-        .chat-message { display: flex; align-items: flex-start; max-width: 90%; animation: fadeIn 0.3s ease-out; }
+        .chat-message { 
+            display: flex; align-items: flex-start; 
+            max-width: 90%; 
+            animation: fadeIn 0.3s ease-out; 
+        }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         .bot-message { align-self: flex-start; }
@@ -153,67 +264,113 @@
         .bot-icon {
             width: 40px; height: 40px; min-width: 40px;
             border: var(--border-width) solid var(--text-color);
-            background: var(--accent-color); margin-right: 10px;
-            object-fit: cover; border-radius: 50%;
+            background: var(--accent-color);
+            margin-right: 10px;
+            object-fit: cover;
+            border-radius: 50%;
+            transition: border-color 0.3s;
         }
         
         .user-message .message-content {
-            background: #000; color: #fff; box-shadow: -4px 4px 0 rgba(255,247,0,0.5); margin-right: 0;
+            background: #000; color: #fff; 
+            box-shadow: -4px 4px 0 rgba(255,247,0,0.5);
+            margin-right: 0;
         }
+
         .message-content {
             background: #fff; border: var(--border-width) solid var(--text-color);
             padding: 0.8rem; position: relative;
             box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
-            font-size: 0.95rem; word-wrap: break-word; line-height: 1.6; border-radius: 4px;
+            font-size: 0.95rem; word-wrap: break-word;
+            line-height: 1.6;
+            border-radius: 4px;
         }
-        body.dark-mode .bot-message .message-content { background: #000; color: #fff; border-color: #fff; }
-        body.dark-mode .user-message .message-content { background: var(--accent-color); color: #000; border-color: #fff; }
+
+        body.dark-mode .bot-message .message-content {
+            background: #000; color: #fff; border-color: #fff;
+            box-shadow: 4px 4px 0 rgba(255,255,255,0.2);
+        }
+        body.dark-mode .user-message .message-content {
+            background: var(--accent-color); color: #000; border-color: #fff;
+            box-shadow: -4px 4px 0 rgba(255,255,255,0.5);
+        }
 
         /* --- 入力エリア --- */
         .input-area {
-            background: var(--accent-color); border-top: var(--border-width) solid var(--text-color);
+            background: var(--accent-color); 
+            border-top: var(--border-width) solid var(--text-color);
             padding: 10px; display: flex; gap: 8px; align-items: center;
-            position: relative; z-index: 20; flex-shrink: 0;
+            position: relative; z-index: 20; transition: background-color 0.3s, border-color 0.3s;
+            flex-shrink: 0;
             padding-bottom: max(10px, env(safe-area-inset-bottom));
         }
         body.dark-mode .input-area { background: #333; border-top-color: #fff; }
 
         #user-input {
-            flex: 1; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 16px; 
-            border: var(--border-width) solid var(--text-color); outline: none;
-            box-shadow: inset 3px 3px 0 rgba(0,0,0,0.1); border-radius: 0; -webkit-appearance: none;
+            flex: 1; padding: 10px; 
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px; 
+            border: var(--border-width) solid var(--text-color);
+            outline: none; box-shadow: inset 3px 3px 0 rgba(0,0,0,0.1);
+            border-radius: 0; -webkit-appearance: none;
         }
-        body.dark-mode #user-input { background: #000; color: #fff; border-color: #fff; }
+        body.dark-mode #user-input {
+            background: #000; color: #fff; border-color: #fff;
+            box-shadow: inset 3px 3px 0 rgba(255,255,255,0.1);
+        }
 
         .input-area button {
-            padding: 0 15px; height: 46px; font-weight: 800;
-            background: var(--text-color); color: #fff; border: var(--border-width) solid var(--text-color);
-            box-shadow: 3px 3px 0 #fff; cursor: pointer;
+            padding: 0 15px; height: 46px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 800; font-size: 0.9rem;
+            background: var(--text-color); color: #fff;
+            border: var(--border-width) solid var(--text-color);
+            cursor: pointer; transition: all 0.1s; text-transform: uppercase;
+            box-shadow: 3px 3px 0 #fff; white-space: nowrap;
         }
-        body.dark-mode .input-area button { background: var(--accent-color); color: #000; border-color: #fff; }
-        .input-area button:active { transform: translate(2px, 2px); box-shadow: none; }
+        body.dark-mode .input-area button {
+            background: var(--accent-color); color: #000;
+            border-color: #fff; box-shadow: 3px 3px 0 #fff;
+        }
+        .input-area button:active {
+            transform: translate(2px, 2px);
+            box-shadow: none;
+        }
 
         /* --- フッター --- */
         footer {
-            background: var(--text-color); color: #fff; padding: 5px 10px; font-size: 0.75rem;
-            border-top: 1px solid #fff; text-align: center; flex-shrink: 0;
+            background: var(--text-color); color: #fff;
+            padding: 5px 10px; font-size: 0.75rem;
+            border-top: 1px solid #fff; text-align: center;
+            transition: background-color 0.3s;
+            flex-shrink: 0;
             padding-bottom: max(5px, env(safe-area-inset-bottom));
         }
         body.dark-mode footer { background: #000; border-top-color: #333; }
         
         .file-list-container {
-            display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 3px;
+            display: flex; justify-content: center; flex-wrap: wrap;
+            gap: 8px; margin-top: 3px;
             max-height: 60px; overflow-y: auto;
         }
+        
         .file-badge {
             background: #333; color: var(--accent-color); padding: 2px 8px;
             border: 1px solid var(--accent-color); border-radius: 4px; font-size: 0.7rem;
-            text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+            text-decoration: none; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 4px;
+            white-space: nowrap;
         }
 
         /* --- スマホ用調整 --- */
         @media (max-width: 768px) {
-            h1 { font-size: 1.2rem; padding: 0.3rem 0.8rem; transform: skew(-5deg) !important; }
+            h1 { 
+                font-size: 1.2rem; 
+                padding: 0.3rem 0.8rem;
+                max-width: 160px;
+                transform: skew(-5deg) !important;
+                box-shadow: 4px 4px 0 rgba(0,0,0,0.2) !important;
+            }
             .back-button span { display: none; }
             
             /* スマホではタブをヘッダーの下に移動 */
@@ -222,26 +379,34 @@
             .role-container { position: static; transform: none; margin-top: 5px; width: 100%; justify-content: center; }
             .role-btn { flex: 1; text-align: center; padding: 8px 0; }
         }
-
-        /* PC用カーソル */
-        .cursor-trail {
-            position: fixed; width: 12px; height: 12px;
-            background-color: var(--text-color); pointer-events: none; z-index: 9990;
-            animation: fadeOut 0.6s forwards;
-        }
-        body.dark-mode .cursor-trail { background-color: var(--accent-color); }
     </style>
 </head>
 <body>
 
     <div id="disclaimer-overlay">
         <div class="disclaimer-box">
-            <div class="disclaimer-title"><i class="fas fa-exclamation-triangle"></i> 利用規約</div>
-            <div class="disclaimer-content">
-                <p><strong>[ CAUTION ]</strong> AIの回答は100%正確ではありません。</p>
-                <p><strong>[ MONITORING ]</strong> 会話データは品質向上のため記録されます。</p>
+            <div class="disclaimer-title">
+                <i class="fas fa-exclamation-triangle"></i> 利用規約
             </div>
-            <button class="agree-button" onclick="closeDisclaimer()">AGREE & START <i class="fas fa-arrow-right"></i></button>
+            <div class="disclaimer-content">
+                <div class="disclaimer-item">
+                    <div class="disclaimer-icon"><i class="fas fa-robot"></i></div>
+                    <div>
+                        <strong>[ AIなもので... ]</strong><br>
+                        AIの回答は100%正確ではありません。<br>必ず公式資料も併せてご確認ください。
+                    </div>
+                </div>
+                <div class="disclaimer-item">
+                    <div class="disclaimer-icon"><i class="fas fa-server"></i></div>
+                    <div>
+                        <strong>[ 見てますよ ]</strong><br>
+                        会話データは収集され、管理者が品質向上のために閲覧します。
+                    </div>
+                </div>
+            </div>
+            <button class="agree-button" onclick="closeDisclaimer()">
+                はじめますか？ <i class="fas fa-arrow-right"></i>
+            </button>
         </div>
     </div>
 
@@ -251,7 +416,7 @@
                 <i class="fas fa-arrow-left"></i> <span>TOP</span>
             </a>
         </div>
-        <h1 id="mode-toggle" title="Click to toggle Dark Mode">bit Schoo AIl </h1>
+        <h1 id="mode-toggle" title="Click to toggle Dark Mode">School Bot</h1>
         
         <div class="role-container">
             <div class="role-btn active" onclick="setRole('在学生', this)">在学生</div>
@@ -289,30 +454,39 @@
     </footer>
 
     <script>
+        // --- 同意画面を閉じる関数 ---
         function closeDisclaimer() {
             const overlay = document.getElementById('disclaimer-overlay');
             overlay.style.opacity = '0';
             setTimeout(() => { overlay.style.visibility = 'hidden'; }, 500);
         }
 
+        // --- Dark Mode ---
         const modeToggle = document.getElementById('mode-toggle');
         modeToggle.addEventListener('click', () => {
             document.body.classList.toggle('dark-mode');
         });
 
+        // --- Trail Logic (ご希望のグリッチ仕様に戻しました) ---
         let lastTrailTime = 0;
-        if (window.matchMedia("(min-width: 768px)").matches) {
-            document.addEventListener('mousemove', (e) => {
-                const now = Date.now();
-                if (now - lastTrailTime < 25) return;
-                lastTrailTime = now;
-                const trail = document.createElement('div');
-                trail.className = 'cursor-trail';
-                trail.style.left = e.clientX + 'px';
-                trail.style.top = e.clientY + 'px';
-                document.body.appendChild(trail);
-                setTimeout(() => { trail.remove(); }, 600);
-            });
+        document.addEventListener('mousemove', (e) => {
+            createTrail(e.clientX, e.clientY);
+        });
+
+        function createTrail(x, y) {
+            const now = Date.now();
+            if (now - lastTrailTime < 25) return;
+            lastTrailTime = now;
+            const trail = document.createElement('div');
+            trail.className = 'cursor-trail';
+            trail.style.left = x + 'px';
+            trail.style.top = y + 'px';
+            const offsetX = Math.random() * 10 - 5;
+            const offsetY = Math.random() * 10 - 5;
+            trail.style.marginLeft = offsetX + 'px';
+            trail.style.marginTop = offsetY + 'px';
+            document.body.appendChild(trail);
+            setTimeout(() => { trail.remove(); }, 600);
         }
 
         // --- 役割切り替えロジック ---
@@ -320,15 +494,12 @@
 
         function setRole(role, element) {
             currentRole = role;
-            
             // ボタンの見た目を更新
             document.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
-            
-            // 通知（チャットには流さず、コンソール確認用）
-            console.log("Role switched to:", currentRole);
         }
 
+        // --- Chat Logic ---
         const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
         let conversationHistory = [];
