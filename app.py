@@ -17,12 +17,16 @@ GENAI_API_KEY = os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=GENAI_API_KEY)
 
 SERVICE_ACCOUNT_FILE = '/etc/secrets/credentials.json'
+
+# ★親フォルダID
 DRIVE_FOLDER_ID = '1fJ3Mbrcw-joAsX33aBu0z4oSQu7I0PhP' 
+
+# ★スプレッドシートID
 SPREADSHEET_ID = '1NK0ixXY9hOWuMib22wZxmFX6apUV7EhTDawTXPganZg'
 
-# モデル設定
+# --- モデル設定 (画像認識・PDF読み込み用) ---
 generation_config = {
-    "temperature": 0.1,
+    "temperature": 0.0,  # ★0.0にして回答のブレと推測を完全に殺します
     "top_p": 0.95,
     "top_k": 40,
     "max_output_tokens": 8192,
@@ -34,7 +38,7 @@ model = genai.GenerativeModel(
 )
 
 # グローバル変数
-UPLOADED_FILES_CACHE = {'在学生': [], '受験生': [], '保護者': []}
+UPLOADED_FILES_CACHE = {'在校生': [], '受験生': [], '保護者': []}
 FILE_LIST_DATA = []
 
 def get_credentials():
@@ -55,11 +59,12 @@ def load_and_upload_pdfs_by_role():
     
     service = build('drive', 'v3', credentials=creds)
     
-    # リセット
-    UPLOADED_FILES_CACHE = {'在学生': [], '受験生': [], '保護者': []}
+    # リセット (フォルダ名に合わせてキーを設定)
+    UPLOADED_FILES_CACHE = {'在校生': [], '受験生': [], '保護者': []}
     FILE_LIST_DATA = []
     
-    target_roles = ['在学生', '受験生', '保護者']
+    # ★ターゲットフォルダ名 (Googleドライブのフォルダ名と完全一致させる)
+    target_roles = ['在校生', '受験生', '保護者']
 
     try:
         for role in target_roles:
@@ -86,11 +91,11 @@ def load_and_upload_pdfs_by_role():
             for item in items:
                 print(f"Processing [{role}]: {item['name']}...")
                 
-                # ★修正点：role情報をデータに追加
+                # フッター表示用データ
                 FILE_LIST_DATA.append({
                     'name': item['name'],
                     'url': item.get('webViewLink', '#'),
-                    'role': role 
+                    'role': role  # このroleを使ってHTML側で出し分けます
                 })
 
                 request = service.files().get_media(fileId=item['id'])
@@ -102,6 +107,7 @@ def load_and_upload_pdfs_by_role():
 
                 try:
                     uploaded_file = genai.upload_file(path=tmp_path, display_name=item['name'])
+                    # 処理待ち
                     while uploaded_file.state.name == "PROCESSING":
                         time.sleep(2)
                         uploaded_file = genai.get_file(uploaded_file.name)
@@ -152,7 +158,7 @@ def chat():
     data = request.json
     user_message = data.get('message')
     history_list = data.get('history', [])
-    user_role = data.get('role', '在学生')
+    user_role = data.get('role', '在校生') # デフォルトは在校生
     
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
@@ -165,22 +171,27 @@ def chat():
 
     target_files = UPLOADED_FILES_CACHE.get(user_role, [])
 
+    # ★ここが重要：役割ごとのペルソナとルール設定
     role_instruction = ""
-    if user_role == '在学生':
-        role_instruction = "相手は【在学生】です。親しみやすい口調で、学校生活について詳しく答えてください。"
+    if user_role == '在校生':
+        role_instruction = "相手は【在校生】です。親しみやすい先輩のような口調で答えてください。"
     elif user_role == '受験生':
-        role_instruction = "相手は【受験生】です。優しく歓迎する口調で、入試や学校の魅力をアピールしてください。"
+        role_instruction = "相手は【受験生】です。優しく歓迎する口調で、学校の魅力を伝えてください。"
     elif user_role == '保護者':
-        role_instruction = "相手は【保護者】です。丁寧で信頼感のある口調で、学費や就職実績について答えてください。"
+        role_instruction = "相手は【保護者】です。丁寧で信頼感のあるビジネスライクな口調で答えてください。"
 
+    # ★最強のプロンプト：推測禁止とページ数明記を強制
     system_instruction = f"""
-    あなたは学校の公式質問応答システムです。
-    【現在の設定】{role_instruction}
-    【重要ルール】
-    1. 添付された資料(PDF)の内容のみを根拠に回答してください。
-    2. 資料内の「グラフ」「表」「地図」「写真」の情報も読み取って活用してください。
-    3. 推測や一般論を混ぜる場合は「資料にはありませんが…」と断りを入れてください。
-    4. 根拠とした資料名とページ数を明記してください。
+    あなたは学校の公式質問応答AIです。
+    現在の対話相手設定：{role_instruction}
+    
+    【回答の絶対ルール】
+    1. 添付された資料(PDF)に書かれている内容**のみ**を根拠に回答してください。
+    2. あなた自身の知識、一般論、推測を混ぜることは**固く禁止**します。
+    3. 資料の中に答えが見つからない場合は、正直に「申し訳ありません、提供された資料の中にはその情報が含まれていません」とだけ答えてください。無理に答えを捏造しないでください。
+    4. どのPDFファイルの、どの部分を見て答えたかを示すため、回答の最後には必ず【参照元：ファイル名 (P.ページ数)】を明記してください。
+    5. 資料内のグラフや地図、写真の情報も読み取って回答してください。
+    
     [これまでの会話]
     """ + history_text
 
