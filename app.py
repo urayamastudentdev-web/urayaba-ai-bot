@@ -18,16 +18,16 @@ genai.configure(api_key=GENAI_API_KEY)
 
 SERVICE_ACCOUNT_FILE = '/etc/secrets/credentials.json'
 
-# ★ここにGoogleドライブのフォルダIDを貼り付けてください
+# ★ここに「親フォルダ」のIDを貼り付けてください
+# (このフォルダの中に「在学生」「受験生」「保護者」というフォルダを作ってください)
 DRIVE_FOLDER_ID = '1fJ3Mbrcw-joAsX33aBu0z4oSQu7I0PhP' 
 
-# ★ここにスプレッドシートIDを貼り付けてください
+# ★スプレッドシートID
 SPREADSHEET_ID = '1NK0ixXY9hOWuMib22wZxmFX6apUV7EhTDawTXPganZg'
 
 # --- モデル設定 (画像認識・PDF読み込み用) ---
-# 課金済みなら 1.5-flash がPDF認識において最もコスパと性能のバランスが良いです
 generation_config = {
-    "temperature": 0.1,  # 事実に忠実な回答
+    "temperature": 0.1,
     "top_p": 0.95,
     "top_k": 40,
     "max_output_tokens": 8192,
@@ -38,9 +38,9 @@ model = genai.GenerativeModel(
     generation_config=generation_config
 )
 
-# グローバル変数（アップロード済みファイルオブジェクトを保持）
-UPLOADED_FILES_CACHE = [] 
-FILE_LIST_DATA = []
+# グローバル変数（役割ごとのファイルキャッシュ）
+UPLOADED_FILES_CACHE = {}  # {'在学生': [], '受験生': [], '保護者': []}
+FILE_LIST_DATA = []        # 全ファイル一覧（フッター表示用）
 
 def get_credentials():
     """認証情報を取得"""
@@ -58,103 +58,119 @@ def get_credentials():
     ]
     return service_account.Credentials.from_service_account_file(creds_path, scopes=scopes)
 
-def load_and_upload_pdfs():
-    """Google DriveからPDFをダウンロードし、Geminiへアップロードする(画像認識モード)"""
+def load_and_upload_pdfs_by_role():
+    """
+    Drive内の「在学生」「受験生」「保護者」フォルダを探し、
+    それぞれのPDFをGeminiへアップロードして振り分ける
+    """
     global UPLOADED_FILES_CACHE, FILE_LIST_DATA
     
     creds = get_credentials()
-    if not creds:
-        return [], []
+    if not creds: return
     
     service = build('drive', 'v3', credentials=creds)
     
     # リセット
-    UPLOADED_FILES_CACHE = []
+    UPLOADED_FILES_CACHE = {'在学生': [], '受験生': [], '保護者': []}
     FILE_LIST_DATA = []
+    
+    # 探すフォルダ名リスト
+    target_roles = ['在学生', '受験生', '保護者']
 
     try:
-        # DriveからPDF一覧を取得
-        query = f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false"
-        results = service.files().list(q=query, fields="files(id, name, webViewLink)").execute()
-        items = results.get('files', [])
-
-        if not items:
-            print("No PDF files found.")
-            return [], []
-
-        for item in items:
-            print(f"Processing: {item['name']}...")
+        for role in target_roles:
+            print(f"--- Searching folder for: {role} ---")
             
-            # フロント表示用のリストに追加
-            FILE_LIST_DATA.append({
-                'name': item['name'],
-                'url': item.get('webViewLink', '#')
-            })
-
-            # 1. Driveから一時ファイルとしてダウンロード
-            request = service.files().get_media(fileId=item['id'])
+            # 1. 役割名のフォルダIDを探す
+            query_folder = f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and name='{role}' and trashed=false"
+            results = service.files().list(q=query_folder, fields="files(id, name)").execute()
+            folders = results.get('files', [])
             
-            # 一時ファイルを作成して保存
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                downloader = MediaIoBaseDownload(tmp_file, request)
-                done = False
-                while done is False:
-                    _, done = downloader.next_chunk()
-                tmp_path = tmp_file.name
-
-            # 2. Geminiサーバーへアップロード (File API)
-            try:
-                print(f"Uploading to Gemini: {item['name']}")
-                uploaded_file = genai.upload_file(path=tmp_path, display_name=item['name'])
+            if not folders:
+                print(f"Folder '{role}' not found.")
+                continue
                 
-                # 403エラー防止：処理完了(ACTIVE)になるまで待機
-                print("Waiting for processing...")
-                while uploaded_file.state.name == "PROCESSING":
-                    time.sleep(2)
-                    uploaded_file = genai.get_file(uploaded_file.name)
+            folder_id = folders[0]['id']
+            print(f"Found folder: {role} (ID: {folder_id})")
+
+            # 2. そのフォルダ内のPDFを取得
+            query_files = f"'{folder_id}' in parents and mimeType='application/pdf' and trashed=false"
+            res_files = service.files().list(q=query_files, fields="files(id, name, webViewLink)").execute()
+            items = res_files.get('files', [])
+            
+            if not items:
+                print(f"No PDFs in '{role}' folder.")
+                continue
+
+            role_files = []
+
+            for item in items:
+                print(f"Processing [{role}]: {item['name']}...")
                 
-                if uploaded_file.state.name == "FAILED":
-                    print(f"Failed to process file: {item['name']}")
-                    continue
+                # フッター表示用（分かりやすいように【役割】をつける）
+                FILE_LIST_DATA.append({
+                    'name': f"【{role}】{item['name']}",
+                    'url': item.get('webViewLink', '#')
+                })
 
-                # 準備完了したファイルをリストに追加
-                UPLOADED_FILES_CACHE.append(uploaded_file)
-                print(f"Upload Complete (ACTIVE): {item['name']}")
+                # ダウンロード & アップロード処理
+                request = service.files().get_media(fileId=item['id'])
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                    downloader = MediaIoBaseDownload(tmp_file, request)
+                    done = False
+                    while done is False:
+                        _, done = downloader.next_chunk()
+                    tmp_path = tmp_file.name
 
-            except Exception as upload_error:
-                print(f"Upload Error for {item['name']}: {upload_error}")
-            finally:
-                # 一時ファイルは削除
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+                try:
+                    # Geminiへアップロード
+                    uploaded_file = genai.upload_file(path=tmp_path, display_name=item['name'])
+                    
+                    # 処理待ち
+                    while uploaded_file.state.name == "PROCESSING":
+                        time.sleep(1)
+                        uploaded_file = genai.get_file(uploaded_file.name)
+                    
+                    if uploaded_file.state.name == "ACTIVE":
+                        role_files.append(uploaded_file)
+                        print(f"Upload Complete: {item['name']}")
+                    else:
+                        print(f"Upload Failed: {item['name']}")
+
+                except Exception as upload_error:
+                    print(f"Upload Error: {upload_error}")
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+            
+            # 役割ごとのキャッシュに保存
+            UPLOADED_FILES_CACHE[role] = role_files
 
     except Exception as e:
-        print(f"Drive/Upload Error: {e}")
-        return [], []
+        print(f"Drive Process Error: {e}")
 
     return UPLOADED_FILES_CACHE, FILE_LIST_DATA
 
 def save_log_to_sheet(user_msg, bot_msg, role):
-    """ログ保存 (役割も記録)"""
+    """ログ保存"""
     try:
         creds = get_credentials()
         if not creds: return
         client = gspread.authorize(creds)
         sheet = client.open_by_key(SPREADSHEET_ID).sheet1
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        # 日時, 役割, 質問, 回答
         sheet.append_row([now, role, user_msg, bot_msg])
         print("Log saved.")
     except Exception as e:
         print(f"Logging Error: {e}")
 
-# --- 起動時にファイルを準備 ---
-print("System starting... Uploading files to Gemini...")
-# 課金済みRenderならタイムアウト時間を延ばせるので、ここで時間をかけても大丈夫です
-load_and_upload_pdfs()
+# --- 起動時 ---
+print("System starting... Uploading files by role...")
+load_and_upload_pdfs_by_role()
 print("System Ready.")
 
-# --- ルーティング ---
+# --- Routing ---
 
 @app.route('/')
 def index():
@@ -162,84 +178,69 @@ def index():
 
 @app.route('/refresh')
 def refresh_data():
-    """知識の更新（再アップロード）"""
+    """知識の更新"""
     print("Refreshing data...")
-    # 課金環境ならここが長くても落ちにくいです
-    uploaded, file_list = load_and_upload_pdfs()
-    
-    if file_list:
-        return jsonify({
-            'status': 'success', 
-            'message': '知識データを更新しました！(ファイル再アップロード完了)', 
-            'files': file_list
-        })
-    else:
-        return jsonify({
-            'status': 'error', 
-            'message': '更新に失敗しました。'
-        })
+    load_and_upload_pdfs_by_role()
+    return jsonify({
+        'status': 'success', 
+        'message': '知識データを更新しました！', 
+        'files': FILE_LIST_DATA
+    })
 
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.json
     user_message = data.get('message')
     history_list = data.get('history', [])
-    user_role = data.get('role', '在学生') # デフォルトは在学生
+    user_role = data.get('role', '在学生') # フロントから役割を受け取る
     
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
-    # 履歴のテキスト化
+    # 履歴テキスト化
     history_text = ""
-    # 課金済みなら履歴を多めに送っても大丈夫ですが、安定のため直近4つほど
     for chat in history_list[-4:]: 
         role = "User" if chat['role'] == 'user' else "AI"
         content = chat['text']
         history_text += f"{role}: {content}\n"
 
-    # --- 役割ごとのペルソナ設定 ---
+    # ★役割に応じたファイルを取得
+    target_files = UPLOADED_FILES_CACHE.get(user_role, [])
+
+    # 役割ごとの振る舞い設定
     role_instruction = ""
     if user_role == '在学生':
-        role_instruction = """
-        ・相手は【在学生】です。
-        ・先輩や頼れる先生のような、少しフレンドリーで親身な口調で話してください。
-        ・学校生活のルール、行事、手続きなど、内部生に必要な情報を優先してください。
-        """
+        role_instruction = "相手は【在学生】です。先輩や先生のような親しみやすい口調で、学校生活のルールや行事について詳しく答えてください。"
     elif user_role == '受験生':
-        role_instruction = """
-        ・相手は【受験生（高校生など）】です。
-        ・明るく歓迎するような、丁寧で優しい口調で話してください。
-        ・入試情報、学校の魅力、キャンパスライフの楽しさをアピールしてください。
-        """
+        role_instruction = "相手は【受験生】です。優しく歓迎するような口調で、入試情報や学校の魅力をアピールしてください。"
     elif user_role == '保護者':
-        role_instruction = """
-        ・相手は【保護者】です。
-        ・非常に丁寧で信頼感のある、ビジネスライクな「です・ます」調で話してください。
-        ・学費、就職実績、安全性、サポート体制など、保護者が安心できる情報を優先してください。
-        """
+        role_instruction = "相手は【保護者】です。丁寧で信頼感のある「です・ます」調で、学費や就職実績、サポート体制について答えてください。"
 
     # システムプロンプト
     system_instruction = f"""
     あなたは学校の公式質問応答システムです。
-    以下の設定を守って回答してください。
-
-    【相手の属性】
+    
+    【現在の設定】
     {role_instruction}
     
     【重要ルール】
     1. 添付された資料(PDF)の内容のみを根拠に回答してください。
-    2. 資料内の「グラフ」「表」「地図」「写真」の情報も読み取って回答に活用してください。
-    3. [これまでの会話]の流れを考慮して回答してください。
-    4. 資料にない補足情報として一般論を混ぜる場合は、必ず「資料には記載がありませんが…」と断りを入れてください。
-    5. 根拠とした資料の「ファイル名」と「ページ数」を明記してください。
+    2. 資料内の「グラフ」「表」「地図」「写真」の情報も読み取って活用してください。
+    3. 推測や一般論を混ぜる場合は「資料にはありませんが…」と断りを入れてください。
+    4. 根拠とした資料名とページ数を明記してください。
     
     [これまでの会話]
     """ + history_text
 
-    # リクエストデータの作成
-    # [指示, ファイル1, ファイル2..., ユーザーの質問]
+    # AIに渡すデータ：[指示, (役割に合ったファイル達), 質問]
     request_content = [system_instruction]
-    request_content.extend(UPLOADED_FILES_CACHE) 
+    
+    if target_files:
+        request_content.extend(target_files)
+    else:
+        print(f"Warning: No files found for role {user_role}")
+        # ファイルがない場合でも会話だけは成立させる
+    
     request_content.append(f"\n[ユーザーの質問]\n{user_message}")
 
     try:
@@ -247,13 +248,12 @@ def chat():
         response = model.generate_content(request_content)
         bot_reply = response.text
         
-        # ログ保存
         save_log_to_sheet(user_message, bot_reply, user_role)
         
         return jsonify({'reply': bot_reply})
     except Exception as e:
         print(f"Gemini Error: {e}")
-        return jsonify({'reply': '申し訳ありません。エラーが発生しました。'}), 500
+        return jsonify({'reply': 'エラーが発生しました。'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
