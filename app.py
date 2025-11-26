@@ -28,7 +28,7 @@ generation_config = {
     "max_output_tokens": 8192,
 }
 
-# ★追加: 安全フィルターを解除する設定（誤検知による回答拒否を防ぐ）
+# 安全フィルター解除（誤検知防止）
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -37,9 +37,9 @@ safety_settings = [
 ]
 
 model = genai.GenerativeModel(
-    model_name='models/gemini-2.5-flash',
+    model_name='models/gemini-1.5-flash',
     generation_config=generation_config,
-    safety_settings=safety_settings  # ★ここで適用
+    safety_settings=safety_settings
 )
 
 # グローバル変数
@@ -95,7 +95,6 @@ def load_and_upload_pdfs_by_role():
             for item in items:
                 print(f"Processing [{role}]: {item['name']}...")
                 
-                # フッター用リスト
                 FILE_LIST_DATA.append({
                     'name': item['name'],
                     'url': item.get('webViewLink', '#'),
@@ -112,7 +111,6 @@ def load_and_upload_pdfs_by_role():
                 try:
                     uploaded_file = genai.upload_file(path=tmp_path, display_name=item['name'])
                     
-                    # 待機処理（403エラー防止）
                     retry_count = 0
                     while uploaded_file.state.name == "PROCESSING" and retry_count < 30:
                         time.sleep(2)
@@ -123,7 +121,7 @@ def load_and_upload_pdfs_by_role():
                         role_files.append(uploaded_file)
                         print(f"Upload Complete: {item['name']}")
                     else:
-                        print(f"Upload Failed (Status: {uploaded_file.state.name}): {item['name']}")
+                        print(f"Upload Failed: {item['name']}")
 
                 except Exception as upload_error:
                     print(f"Upload Error: {upload_error}")
@@ -179,26 +177,40 @@ def chat():
         content = chat['text']
         history_text += f"{role}: {content}\n"
 
+    # 対象ファイルを取得
     target_files = UPLOADED_FILES_CACHE.get(user_role, [])
 
+    # ★追加：AIに「今持っているファイル情報」を言葉で教える処理
+    if target_files:
+        # ファイル名リストを作成
+        file_names_str = "\n".join([f"・{f.display_name}" for f in target_files])
+        file_count_info = f"あなたは現在、以下の【合計{len(target_files)}つ】のファイルを資料として持っています：\n{file_names_str}"
+    else:
+        file_count_info = "現在、参照できる資料ファイルはありません。"
+
+    # ペルソナ設定
     role_instruction = ""
     if user_role == '在校生':
-        role_instruction = "相手は【在校生】です。親しみやすい先輩のような口調で答えてください。"
+        role_instruction = "相手は【在校生】です。先輩や先生のような親しみやすい口調で答えてください。"
     elif user_role == '受験生':
-        role_instruction = "相手は【受験生】です。優しく歓迎する口調で、入試や学校の魅力をアピールしてください。"
+        role_instruction = "相手は【受験生】です。優しく歓迎するような口調で答えてください。"
     elif user_role == '保護者':
-        role_instruction = "相手は【保護者】です。丁寧で信頼感のある口調で、学費や就職実績について答えてください。"
+        role_instruction = "相手は【保護者】です。丁寧で信頼感のある口調で答えてください。"
 
+    # プロンプト（ファイル情報を組み込む）
     system_instruction = f"""
     あなたは学校の公式質問応答AIです。
     現在の対話相手設定：{role_instruction}
     
+    【参照資料の状況】
+    {file_count_info}
+    
     【回答の絶対ルール】
     1. 添付された資料(PDF)の内容のみを根拠に回答してください。
-    2. 資料内の「グラフ」「表」「地図」「写真」の情報も読み取って回答に活用してください。
-    3. あなた自身の知識、一般論、推測を混ぜることは**固く禁止**します。
-    4. 資料の中に答えが見つからない場合は、正直に「申し訳ありません、提供された資料の中にはその情報が含まれていません」とだけ答えてください。
-    5. どのPDFファイルの、どの部分を見て答えたかを示すため、回答の最後には必ず【参照元：ファイル名 (P.ページ数)】を明記してください。
+    2. ユーザーから「どんなファイルを見ていますか？」「資料は何個ありますか？」と聞かれた場合は、上記の【参照資料の状況】の情報をそのまま伝えてください。
+    3. 資料内のグラフ、地図、写真の情報も読み取って回答してください。
+    4. あなた自身の知識や推測は混ぜないでください。
+    5. 回答の最後には必ず【参照元：ファイル名 (P.ページ数)】を明記してください。
     
     [これまでの会話]
     """ + history_text
@@ -210,14 +222,11 @@ def chat():
 
     try:
         response = model.generate_content(request_content)
-        
-        # ★修正: 安全フィルタでブロックされた場合の処理を追加
         try:
             bot_reply = response.text
         except ValueError:
-            # response.textが空（ブロックされた）場合の救済処置
-            print(f"Blocked Response Feedback: {response.prompt_feedback}")
-            bot_reply = "申し訳ありません。その質問に対する回答を作成できませんでした（安全フィルターによりブロックされました）。別の言い方で質問してみてください。"
+            print(f"Blocked: {response.prompt_feedback}")
+            bot_reply = "申し訳ありません。安全フィルターにより回答が生成できませんでした。"
 
         save_log_to_sheet(user_message, bot_reply, user_role)
         return jsonify({'reply': bot_reply})
