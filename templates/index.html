@@ -35,14 +35,101 @@
             display: flex;
             flex-direction: column;
             height: 100vh; 
-            height: 100dvh; /* スマホのアドレスバー対策 */
+            height: 100dvh; 
             overflow: hidden;
             background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
             background-size: 20px 20px;
             transition: background-color 0.3s, color 0.3s;
         }
 
-        /* --- カーソルの軌跡（PCのみ表示） --- */
+        /* --- 同意画面 (Disclaimer Overlay) --- */
+        #disclaimer-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); /* 背景を少し透かす */
+            backdrop-filter: blur(5px);
+            z-index: 9999; /* 最前面 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            transition: opacity 0.5s ease, visibility 0.5s;
+        }
+
+        .disclaimer-box {
+            background-color: var(--accent-color);
+            border: var(--border-width) solid #000;
+            padding: 2rem;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 10px 10px 0 #fff;
+            text-align: left;
+            transform: rotate(-1deg);
+        }
+
+        .disclaimer-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            border-bottom: 3px solid #000;
+            padding-bottom: 10px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .disclaimer-content {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 2rem;
+        }
+
+        .disclaimer-item {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .disclaimer-icon {
+            background: #000;
+            color: var(--accent-color);
+            min-width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .agree-button {
+            width: 100%;
+            padding: 15px;
+            background-color: #000;
+            color: #fff;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 800;
+            font-size: 1.1rem;
+            border: none;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 5px 5px 0 rgba(255,255,255,0.5);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .agree-button:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 7px 7px 0 rgba(255,255,255,0.5);
+        }
+
+        .agree-button:active {
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0 rgba(255,255,255,0.5);
+        }
+
+        /* --- PC用カーソル軌跡 --- */
         .cursor-trail {
             position: fixed; width: 12px; height: 12px;
             background-color: var(--text-color);
@@ -93,7 +180,7 @@
             box-shadow: none;
         }
 
-        /* --- タイトル（ここに3Dモーションを復活） --- */
+        /* タイトル */
         h1 {
             font-size: 2rem; font-weight: 800; text-transform: uppercase;
             letter-spacing: -1px; line-height: 1;
@@ -101,7 +188,7 @@
             padding: 0.5rem 1rem; 
             border: var(--border-width) solid var(--text-color);
             
-            /* ★復活: 3D変形の基準点 */
+            /* PC用3Dエフェクト */
             transform: perspective(1000px) rotateX(0deg) rotateY(0deg) skew(-5deg);
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             
@@ -115,12 +202,10 @@
             text-overflow: ellipsis;
         }
         
-        /* ★復活: カーソルを合わせた時のモーション */
         h1:hover {
             background-color: #000; 
             color: #fff; 
             border-color: #000;
-            /* グインッと動くアニメーション */
             transform: perspective(1000px) rotateX(10deg) rotateY(-5deg) scale(1.05) skew(-5deg) translateY(-5px);
             box-shadow: 15px 20px 0 rgba(255, 247, 0, 0.8);
         }
@@ -201,7 +286,7 @@
         #user-input {
             flex: 1; padding: 10px; 
             font-family: 'JetBrains Mono', monospace;
-            font-size: 16px; /* スマホズーム防止 */
+            font-size: 16px; 
             border: var(--border-width) solid var(--text-color);
             outline: none; box-shadow: inset 3px 3px 0 rgba(0,0,0,0.1);
             border-radius: 0; -webkit-appearance: none;
@@ -254,30 +339,57 @@
             white-space: nowrap;
         }
 
-        /* --- スマホ用調整 (PCのエフェクトは消さない) --- */
+        /* --- スマホ用調整 --- */
         @media (max-width: 600px) {
             h1 { 
                 font-size: 1.2rem; 
                 padding: 0.3rem 0.8rem;
                 max-width: 160px;
-                /* スマホでは3D回転を控えめにする */
-                transform: skew(-5deg) !important; 
+                transform: skew(-5deg) !important; /* モーション控えめ */
                 box-shadow: 4px 4px 0 rgba(0,0,0,0.2) !important;
             }
             .back-button span { display: none; }
             .back-button { padding: 0.4rem; }
-            .cursor-trail { display: none !important; } /* スマホだけ軌跡を消す */
+            .cursor-trail { display: none !important; }
         }
     </style>
 </head>
 <body>
+
+    <div id="disclaimer-overlay">
+        <div class="disclaimer-box">
+            <div class="disclaimer-title">
+                <i class="fas fa-exclamation-triangle"></i> ACCESS PROTOCOL
+            </div>
+            <div class="disclaimer-content">
+                <div class="disclaimer-item">
+                    <div class="disclaimer-icon"><i class="fas fa-robot"></i></div>
+                    <div>
+                        <strong>[ CAUTION ]</strong><br>
+                        AIの回答は100%正確ではありません。<br>必ず公式資料も併せてご確認ください。
+                    </div>
+                </div>
+                <div class="disclaimer-item">
+                    <div class="disclaimer-icon"><i class="fas fa-server"></i></div>
+                    <div>
+                        <strong>[ MONITORING ]</strong><br>
+                        会話データは収集され、管理者が品質向上のために閲覧します。
+                    </div>
+                </div>
+            </div>
+            <button class="agree-button" onclick="closeDisclaimer()">
+                AGREE & START <i class="fas fa-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
     <header>
         <div class="back-button-container">
             <a href="https://www.bit.urayama.ac.jp/" class="back-button">
                 <i class="fas fa-arrow-left"></i> <span>TOP</span>
             </a>
         </div>
-        <h1 id="mode-toggle" title="Click to toggle Dark Mode">School AI caht</h1>
+        <h1 id="mode-toggle" title="Click to toggle Dark Mode">School Bot</h1>
     </header>
 
     <main id="chat-container">
@@ -309,6 +421,15 @@
     </footer>
 
     <script>
+        // --- 同意画面を閉じる関数 ---
+        function closeDisclaimer() {
+            const overlay = document.getElementById('disclaimer-overlay');
+            overlay.style.opacity = '0';
+            setTimeout(() => {
+                overlay.style.visibility = 'hidden';
+            }, 500);
+        }
+
         // --- Dark Mode ---
         const modeToggle = document.getElementById('mode-toggle');
         modeToggle.addEventListener('click', () => {
@@ -317,7 +438,6 @@
 
         // --- Trail Logic (PC Only) ---
         let lastTrailTime = 0;
-        // PCの場合のみカーソル軌跡を有効化
         if (window.matchMedia("(min-width: 768px)").matches) {
             document.addEventListener('mousemove', (e) => {
                 createTrail(e.clientX, e.clientY);
