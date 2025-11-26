@@ -17,24 +17,29 @@ GENAI_API_KEY = os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=GENAI_API_KEY)
 
 SERVICE_ACCOUNT_FILE = '/etc/secrets/credentials.json'
-
-# ★親フォルダID
 DRIVE_FOLDER_ID = '1fJ3Mbrcw-joAsX33aBu0z4oSQu7I0PhP' 
-
-# ★スプレッドシートID
 SPREADSHEET_ID = '1NK0ixXY9hOWuMib22wZxmFX6apUV7EhTDawTXPganZg'
 
-# --- モデル設定 (画像認識・PDF読み込み用) ---
+# --- モデル設定 ---
 generation_config = {
-    "temperature": 0.0,  # ★0.0にして回答のブレと推測を完全に殺します
+    "temperature": 0.1,
     "top_p": 0.95,
     "top_k": 40,
     "max_output_tokens": 8192,
 }
 
+# ★追加: 安全フィルターを解除する設定（誤検知による回答拒否を防ぐ）
+safety_settings = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+]
+
 model = genai.GenerativeModel(
     model_name='models/gemini-2.5-flash',
-    generation_config=generation_config
+    generation_config=generation_config,
+    safety_settings=safety_settings  # ★ここで適用
 )
 
 # グローバル変数
@@ -51,7 +56,7 @@ def get_credentials():
     return service_account.Credentials.from_service_account_file(creds_path, scopes=scopes)
 
 def load_and_upload_pdfs_by_role():
-    """役割ごとのフォルダからPDFを読み込む"""
+    """役割ごとのフォルダからPDFを読み込み、アップロードする"""
     global UPLOADED_FILES_CACHE, FILE_LIST_DATA
     
     creds = get_credentials()
@@ -59,11 +64,10 @@ def load_and_upload_pdfs_by_role():
     
     service = build('drive', 'v3', credentials=creds)
     
-    # リセット (フォルダ名に合わせてキーを設定)
+    # リセット
     UPLOADED_FILES_CACHE = {'在校生': [], '受験生': [], '保護者': []}
     FILE_LIST_DATA = []
     
-    # ★ターゲットフォルダ名 (Googleドライブのフォルダ名と完全一致させる)
     target_roles = ['在校生', '受験生', '保護者']
 
     try:
@@ -91,11 +95,11 @@ def load_and_upload_pdfs_by_role():
             for item in items:
                 print(f"Processing [{role}]: {item['name']}...")
                 
-                # フッター表示用データ
+                # フッター用リスト
                 FILE_LIST_DATA.append({
                     'name': item['name'],
                     'url': item.get('webViewLink', '#'),
-                    'role': role  # このroleを使ってHTML側で出し分けます
+                    'role': role 
                 })
 
                 request = service.files().get_media(fileId=item['id'])
@@ -107,16 +111,22 @@ def load_and_upload_pdfs_by_role():
 
                 try:
                     uploaded_file = genai.upload_file(path=tmp_path, display_name=item['name'])
-                    # 処理待ち
-                    while uploaded_file.state.name == "PROCESSING":
+                    
+                    # 待機処理（403エラー防止）
+                    retry_count = 0
+                    while uploaded_file.state.name == "PROCESSING" and retry_count < 30:
                         time.sleep(2)
                         uploaded_file = genai.get_file(uploaded_file.name)
+                        retry_count += 1
                     
                     if uploaded_file.state.name == "ACTIVE":
                         role_files.append(uploaded_file)
                         print(f"Upload Complete: {item['name']}")
-                except Exception as e:
-                    print(f"Upload Error: {e}")
+                    else:
+                        print(f"Upload Failed (Status: {uploaded_file.state.name}): {item['name']}")
+
+                except Exception as upload_error:
+                    print(f"Upload Error: {upload_error}")
                 finally:
                     if os.path.exists(tmp_path): os.remove(tmp_path)
             
@@ -158,7 +168,7 @@ def chat():
     data = request.json
     user_message = data.get('message')
     history_list = data.get('history', [])
-    user_role = data.get('role', '在校生') # デフォルトは在校生
+    user_role = data.get('role', '在校生')
     
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
@@ -171,26 +181,24 @@ def chat():
 
     target_files = UPLOADED_FILES_CACHE.get(user_role, [])
 
-    # ★ここが重要：役割ごとのペルソナとルール設定
     role_instruction = ""
     if user_role == '在校生':
         role_instruction = "相手は【在校生】です。親しみやすい先輩のような口調で答えてください。"
     elif user_role == '受験生':
-        role_instruction = "相手は【受験生】です。優しく歓迎する口調で、学校の魅力を伝えてください。"
+        role_instruction = "相手は【受験生】です。優しく歓迎する口調で、入試や学校の魅力をアピールしてください。"
     elif user_role == '保護者':
-        role_instruction = "相手は【保護者】です。丁寧で信頼感のあるビジネスライクな口調で答えてください。"
+        role_instruction = "相手は【保護者】です。丁寧で信頼感のある口調で、学費や就職実績について答えてください。"
 
-    # ★最強のプロンプト：推測禁止とページ数明記を強制
     system_instruction = f"""
     あなたは学校の公式質問応答AIです。
     現在の対話相手設定：{role_instruction}
     
     【回答の絶対ルール】
-    1. 添付された資料(PDF)に書かれている内容**のみ**を根拠に回答してください。
-    2. あなた自身の知識、一般論、推測を混ぜることは**固く禁止**します。
-    3. 資料の中に答えが見つからない場合は、正直に「申し訳ありません、提供された資料の中にはその情報が含まれていません」とだけ答えてください。無理に答えを捏造しないでください。
-    4. どのPDFファイルの、どの部分を見て答えたかを示すため、回答の最後には必ず【参照元：ファイル名 (P.ページ数)】を明記してください。
-    5. 資料内のグラフや地図、写真の情報も読み取って回答してください。
+    1. 添付された資料(PDF)の内容のみを根拠に回答してください。
+    2. 資料内の「グラフ」「表」「地図」「写真」の情報も読み取って回答に活用してください。
+    3. あなた自身の知識、一般論、推測を混ぜることは**固く禁止**します。
+    4. 資料の中に答えが見つからない場合は、正直に「申し訳ありません、提供された資料の中にはその情報が含まれていません」とだけ答えてください。
+    5. どのPDFファイルの、どの部分を見て答えたかを示すため、回答の最後には必ず【参照元：ファイル名 (P.ページ数)】を明記してください。
     
     [これまでの会話]
     """ + history_text
@@ -202,9 +210,18 @@ def chat():
 
     try:
         response = model.generate_content(request_content)
-        bot_reply = response.text
+        
+        # ★修正: 安全フィルタでブロックされた場合の処理を追加
+        try:
+            bot_reply = response.text
+        except ValueError:
+            # response.textが空（ブロックされた）場合の救済処置
+            print(f"Blocked Response Feedback: {response.prompt_feedback}")
+            bot_reply = "申し訳ありません。その質問に対する回答を作成できませんでした（安全フィルターによりブロックされました）。別の言い方で質問してみてください。"
+
         save_log_to_sheet(user_message, bot_reply, user_role)
         return jsonify({'reply': bot_reply})
+
     except Exception as e:
         print(f"Gemini Error: {e}")
         return jsonify({'reply': 'エラーが発生しました。'}), 500
