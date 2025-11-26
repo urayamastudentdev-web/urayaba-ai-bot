@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>School AI Bot - Buttermax Style</title>
+    <title>Urayama AI Chat - Buttermax Style</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap" rel="stylesheet">
     
@@ -36,7 +36,7 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        /* --- 利用規約オーバーレイ (ご希望の文章に戻しました) --- */
+        /* --- 利用規約オーバーレイ --- */
         #disclaimer-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.9); /* 背景を濃く */
@@ -219,7 +219,7 @@
                 <i class="fas fa-arrow-left"></i> <span>TOP</span>
             </a>
         </div>
-        <h1 id="mode-toggle" title="Click to toggle Dark Mode">School AI Bot</h1>
+        <h1 id="mode-toggle" title="Click to toggle Dark Mode">Urayama AI Chat</h1>
         
         <div class="role-container">
             <div class="role-btn active" onclick="setRole('在校生', this)">在校生</div>
@@ -275,7 +275,7 @@
             });
         }
 
-        // ★カーソルをグリッチ風（ランダムに散らす）仕様
+        // ★ご要望の「グリッチ風」カーソル
         function createTrail(x, y) {
             const now = Date.now();
             if (now - lastTrailTime < 25) return;
@@ -285,7 +285,7 @@
             trail.style.left = x + 'px';
             trail.style.top = y + 'px';
             
-            // ランダムなズレ
+            // ランダムに散らす演出
             const offsetX = Math.random() * 10 - 5;
             const offsetY = Math.random() * 10 - 5;
             trail.style.marginLeft = offsetX + 'px';
