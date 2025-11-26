@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap" rel="stylesheet">
     
     <style>
-        /* --- デザイン設定 --- */
+        /* --- 設定変数 --- */
         :root {
             --bg-color: #f3f3f3;
             --accent-color: #fff700;
@@ -36,7 +36,7 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        /* オーバーレイ */
+        /* --- 利用規約オーバーレイ --- */
         #disclaimer-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.85); backdrop-filter: blur(5px);
@@ -60,7 +60,7 @@
         }
         .agree-button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 rgba(255,255,255,0.5); }
 
-        /* ヘッダー */
+        /* --- ヘッダー --- */
         header {
             background-color: var(--bg-color);
             border-bottom: var(--border-width) solid var(--text-color);
@@ -89,6 +89,7 @@
         }
         body.dark-mode .role-btn.active { background: var(--accent-color); color: #000; box-shadow: 3px 3px 0 #fff; }
 
+        /* タイトル (ここをクリックでダークモード) */
         h1 {
             font-size: 2rem; font-weight: 800; text-transform: uppercase;
             background-color: var(--accent-color); color: #000; padding: 0.5rem 1rem; 
@@ -103,6 +104,12 @@
             box-shadow: 15px 20px 0 rgba(255, 247, 0, 0.8);
         }
         body.dark-mode h1 { border-color: #fff; box-shadow: 8px 8px 0 rgba(255,255,255,0.2); }
+        body.dark-mode h1:hover {
+            border-color: var(--accent-color); 
+            background-color: #fff; 
+            color: #000;
+            box-shadow: 15px 20px 0 var(--accent-color);
+        }
 
         /* メイン */
         #chat-container {
@@ -177,6 +184,8 @@
             .role-container { position: static; transform: none; margin-top: 5px; width: 100%; justify-content: center; }
             .role-btn { flex: 1; text-align: center; padding: 8px 0; }
         }
+
+        /* カーソルエフェクト (グリッチ風) */
         .cursor-trail {
             position: fixed; width: 12px; height: 12px; background-color: var(--text-color); pointer-events: none; z-index: 9990; animation: fadeOut 0.6s forwards;
         }
@@ -192,7 +201,7 @@
                 <p><strong>[ CAUTION ]</strong> AIの回答は100%正確ではありません。</p>
                 <p><strong>[ MONITORING ]</strong> 会話データは品質向上のため記録されます。</p>
             </div>
-            <button class="agree-button" onclick="closeDisclaimer()">AGREE & START <i class="fas fa-arrow-right"></i></button>
+            <button class="agree-button" onclick="closeDisclaimer()">はじめますか？ <i class="fas fa-arrow-right"></i></button>
         </div>
     </div>
 
@@ -254,20 +263,31 @@
         let lastTrailTime = 0;
         if (window.matchMedia("(min-width: 768px)").matches) {
             document.addEventListener('mousemove', (e) => {
-                const now = Date.now();
-                if (now - lastTrailTime < 25) return;
-                lastTrailTime = now;
-                const trail = document.createElement('div');
-                trail.className = 'cursor-trail';
-                trail.style.left = e.clientX + 'px';
-                trail.style.top = e.clientY + 'px';
-                document.body.appendChild(trail);
-                setTimeout(() => { trail.remove(); }, 600);
+                createTrail(e.clientX, e.clientY);
             });
         }
 
-        // --- 役割切り替えロジック ---
-        let currentRole = '在校生'; // デフォルトも在校生に
+        // ★カーソルをグリッチ風（ランダムに散らす）に戻しました
+        function createTrail(x, y) {
+            const now = Date.now();
+            if (now - lastTrailTime < 25) return;
+            lastTrailTime = now;
+            const trail = document.createElement('div');
+            trail.className = 'cursor-trail';
+            trail.style.left = x + 'px';
+            trail.style.top = y + 'px';
+            
+            // ランダムなズレを作る
+            const offsetX = Math.random() * 10 - 5;
+            const offsetY = Math.random() * 10 - 5;
+            trail.style.marginLeft = offsetX + 'px';
+            trail.style.marginTop = offsetY + 'px';
+
+            document.body.appendChild(trail);
+            setTimeout(() => { trail.remove(); }, 600);
+        }
+
+        let currentRole = '在校生'; 
 
         function setRole(role, element) {
             currentRole = role;
@@ -287,7 +307,6 @@
             });
         }
 
-        // 初期ロード時にフィルタリングを実行
         document.addEventListener('DOMContentLoaded', () => {
             filterFiles(currentRole);
         });
