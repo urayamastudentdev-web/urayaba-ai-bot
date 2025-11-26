@@ -11,7 +11,7 @@
         /* --- 設定変数 --- */
         :root {
             --bg-color: #f3f3f3;
-            --accent-color: #fff700;
+            --accent-color: #fff700; /* 黄色 */
             --text-color: #000000;
             --border-width: 3px;
             --shadow-offset: 6px;
@@ -36,27 +36,35 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        /* --- 利用規約オーバーレイ --- */
+        /* --- 利用規約オーバーレイ (ご希望の文章に戻しました) --- */
         #disclaimer-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.85); backdrop-filter: blur(5px);
+            background-color: rgba(0, 0, 0, 0.9); /* 背景を濃く */
+            backdrop-filter: blur(5px);
             z-index: 9999; display: flex; align-items: center; justify-content: center;
             padding: 20px; transition: opacity 0.5s ease, visibility 0.5s;
         }
         .disclaimer-box {
             background-color: var(--accent-color); border: var(--border-width) solid #000;
-            padding: 2rem; max-width: 500px; width: 100%;
-            box-shadow: 10px 10px 0 #fff; text-align: left; transform: rotate(-1deg);
+            padding: 2.5rem; max-width: 600px; width: 100%;
+            box-shadow: 15px 15px 0 #fff; text-align: left; transform: rotate(-1deg);
         }
         .disclaimer-title {
-            font-size: 1.5rem; font-weight: 800; margin-bottom: 1.5rem;
-            border-bottom: 3px solid #000; padding-bottom: 10px; text-transform: uppercase;
+            font-size: 1.8rem; font-weight: 800; margin-bottom: 1.5rem;
+            border-bottom: 4px solid #000; padding-bottom: 10px; text-transform: uppercase;
         }
+        .disclaimer-content p {
+            font-size: 1rem; font-weight: 700; margin-bottom: 1.5rem; line-height: 1.6;
+            display: flex; align-items: flex-start; gap: 10px;
+        }
+        .disclaimer-content i { margin-top: 4px; }
+        
         .agree-button {
             width: 100%; padding: 15px; background-color: #000; color: #fff;
-            font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.1rem;
+            font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.2rem;
             border: none; cursor: pointer; text-transform: uppercase;
             box-shadow: 5px 5px 0 rgba(255,255,255,0.5); transition: transform 0.1s;
+            margin-top: 10px;
         }
         .agree-button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 rgba(255,255,255,0.5); }
 
@@ -89,7 +97,7 @@
         }
         body.dark-mode .role-btn.active { background: var(--accent-color); color: #000; box-shadow: 3px 3px 0 #fff; }
 
-        /* タイトル (ここをクリックでダークモード) */
+        /* タイトル */
         h1 {
             font-size: 2rem; font-weight: 800; text-transform: uppercase;
             background-color: var(--accent-color); color: #000; padding: 0.5rem 1rem; 
@@ -198,10 +206,10 @@
         <div class="disclaimer-box">
             <div class="disclaimer-title"><i class="fas fa-exclamation-triangle"></i> 利用規約</div>
             <div class="disclaimer-content">
-                <p><strong>[ CAUTION ]</strong> AIの回答は100%正確ではありません。</p>
-                <p><strong>[ MONITORING ]</strong> 会話データは品質向上のため記録されます。</p>
+                <p><i class="fas fa-robot"></i> AIの回答なので間違えが含まれることがある</p>
+                <p><i class="fas fa-eye"></i> AIとの会話はデータ収集し、管理者側が閲覧できるようになっている</p>
             </div>
-            <button class="agree-button" onclick="closeDisclaimer()">はじめますか？ <i class="fas fa-arrow-right"></i></button>
+            <button class="agree-button" onclick="closeDisclaimer()">同意して開始 <i class="fas fa-arrow-right"></i></button>
         </div>
     </div>
 
@@ -211,7 +219,7 @@
                 <i class="fas fa-arrow-left"></i> <span>TOP</span>
             </a>
         </div>
-        <h1 id="mode-toggle" title="Click to toggle Dark Mode">School Bot</h1>
+        <h1 id="mode-toggle" title="Click to toggle Dark Mode">School AI Bot</h1>
         
         <div class="role-container">
             <div class="role-btn active" onclick="setRole('在校生', this)">在校生</div>
@@ -267,7 +275,7 @@
             });
         }
 
-        // ★カーソルをグリッチ風（ランダムに散らす）に戻しました
+        // ★カーソルをグリッチ風（ランダムに散らす）仕様
         function createTrail(x, y) {
             const now = Date.now();
             if (now - lastTrailTime < 25) return;
@@ -277,7 +285,7 @@
             trail.style.left = x + 'px';
             trail.style.top = y + 'px';
             
-            // ランダムなズレを作る
+            // ランダムなズレ
             const offsetX = Math.random() * 10 - 5;
             const offsetY = Math.random() * 10 - 5;
             trail.style.marginLeft = offsetX + 'px';
@@ -287,6 +295,7 @@
             setTimeout(() => { trail.remove(); }, 600);
         }
 
+        // 役割切り替え
         let currentRole = '在校生'; 
 
         function setRole(role, element) {
