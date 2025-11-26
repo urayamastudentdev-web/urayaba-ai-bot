@@ -1,259 +1,376 @@
-import os
-import io
-import datetime
-import time
-import tempfile
-from flask import Flask, render_template, request, jsonify
-import google.generativeai as genai
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-import gspread
-
-app = Flask(__name__)
-
-# --- 設定エリア ---
-GENAI_API_KEY = os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=GENAI_API_KEY)
-
-SERVICE_ACCOUNT_FILE = '/etc/secrets/credentials.json'
-
-# ★ここに「親フォルダ」のIDを貼り付けてください
-# (このフォルダの中に「在学生」「受験生」「保護者」というフォルダを作ってください)
-DRIVE_FOLDER_ID = '1fJ3Mbrcw-joAsX33aBu0z4oSQu7I0PhP' 
-
-# ★スプレッドシートID
-SPREADSHEET_ID = '1NK0ixXY9hOWuMib22wZxmFX6apUV7EhTDawTXPganZg'
-
-# --- モデル設定 (画像認識・PDF読み込み用) ---
-generation_config = {
-    "temperature": 0.1,
-    "top_p": 0.95,
-    "top_k": 40,
-    "max_output_tokens": 8192,
-}
-
-model = genai.GenerativeModel(
-    model_name='models/gemini-2.5-flash',
-    generation_config=generation_config
-)
-
-# グローバル変数（役割ごとのファイルキャッシュ）
-UPLOADED_FILES_CACHE = {}  # {'在学生': [], '受験生': [], '保護者': []}
-FILE_LIST_DATA = []        # 全ファイル一覧（フッター表示用）
-
-def get_credentials():
-    """認証情報を取得"""
-    creds_path = SERVICE_ACCOUNT_FILE
-    if not os.path.exists(creds_path):
-        creds_path = 'credentials.json'
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>School AI Bot - Buttermax Style</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap" rel="stylesheet">
     
-    if not os.path.exists(creds_path):
-        print("Warning: credentials.json not found.")
-        return None
+    <style>
+        /* --- 設定変数 --- */
+        :root {
+            --bg-color: #f3f3f3;
+            --accent-color: #fff700;
+            --text-color: #000000;
+            --border-width: 3px;
+            --shadow-offset: 6px;
+            --dot-color: #000;
+        }
+        body.dark-mode {
+            --bg-color: #0a0a0a;
+            --text-color: #ffffff;
+            --accent-color: #fff700;
+            --dot-color: #333;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            display: flex; flex-direction: column;
+            height: 100dvh; overflow: hidden;
+            background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            transition: background-color 0.3s, color 0.3s;
+        }
 
-    scopes = [
-        'https://www.googleapis.com/auth/drive.readonly',
-        'https://www.googleapis.com/auth/spreadsheets' 
-    ]
-    return service_account.Credentials.from_service_account_file(creds_path, scopes=scopes)
+        /* --- 利用規約オーバーレイ --- */
+        #disclaimer-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); backdrop-filter: blur(5px);
+            z-index: 9999; display: flex; align-items: center; justify-content: center;
+            padding: 20px; transition: opacity 0.5s ease, visibility 0.5s;
+        }
+        .disclaimer-box {
+            background-color: var(--accent-color); border: var(--border-width) solid #000;
+            padding: 2rem; max-width: 500px; width: 100%;
+            box-shadow: 10px 10px 0 #fff; text-align: left; transform: rotate(-1deg);
+        }
+        .disclaimer-title {
+            font-size: 1.5rem; font-weight: 800; margin-bottom: 1.5rem;
+            border-bottom: 3px solid #000; padding-bottom: 10px; text-transform: uppercase;
+        }
+        .agree-button {
+            width: 100%; padding: 15px; background-color: #000; color: #fff;
+            font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.1rem;
+            border: none; cursor: pointer; text-transform: uppercase;
+            box-shadow: 5px 5px 0 rgba(255,255,255,0.5); transition: transform 0.1s;
+        }
+        .agree-button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 rgba(255,255,255,0.5); }
 
-def load_and_upload_pdfs_by_role():
-    """
-    Drive内の「在学生」「受験生」「保護者」フォルダを探し、
-    それぞれのPDFをGeminiへアップロードして振り分ける
-    """
-    global UPLOADED_FILES_CACHE, FILE_LIST_DATA
-    
-    creds = get_credentials()
-    if not creds: return
-    
-    service = build('drive', 'v3', credentials=creds)
-    
-    # リセット
-    UPLOADED_FILES_CACHE = {'在学生': [], '受験生': [], '保護者': []}
-    FILE_LIST_DATA = []
-    
-    # 探すフォルダ名リスト
-    target_roles = ['在学生', '受験生', '保護者']
+        /* --- ヘッダー --- */
+        header {
+            background-color: var(--bg-color);
+            border-bottom: var(--border-width) solid var(--text-color);
+            padding: 0.8rem 1rem; display: flex; align-items: center; justify-content: center;
+            position: relative; z-index: 10; box-shadow: 0 4px 0 rgba(0,0,0,0.1); flex-shrink: 0;
+        }
+        body.dark-mode header { background-color: #000; box-shadow: 0 4px 0 rgba(255,255,255,0.1); }
 
-    try:
-        for role in target_roles:
-            print(f"--- Searching folder for: {role} ---")
-            
-            # 1. 役割名のフォルダIDを探す
-            query_folder = f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and name='{role}' and trashed=false"
-            results = service.files().list(q=query_folder, fields="files(id, name)").execute()
-            folders = results.get('files', [])
-            
-            if not folders:
-                print(f"Folder '{role}' not found.")
-                continue
-                
-            folder_id = folders[0]['id']
-            print(f"Found folder: {role} (ID: {folder_id})")
+        .back-button-container { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); }
+        .back-button {
+            text-decoration: none; color: #000; font-weight: 800;
+            border: var(--border-width) solid var(--text-color); padding: 0.4rem 0.8rem; background: #fff;
+            box-shadow: 3px 3px 0 var(--text-color); font-size: 0.8rem; display: inline-flex; align-items: center; gap: 5px;
+        }
 
-            # 2. そのフォルダ内のPDFを取得
-            query_files = f"'{folder_id}' in parents and mimeType='application/pdf' and trashed=false"
-            res_files = service.files().list(q=query_files, fields="files(id, name, webViewLink)").execute()
-            items = res_files.get('files', [])
-            
-            if not items:
-                print(f"No PDFs in '{role}' folder.")
-                continue
+        /* タブ */
+        .role-container { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); display: flex; gap: 5px; }
+        .role-btn {
+            background: #fff; color: #000; border: var(--border-width) solid var(--text-color);
+            padding: 0.3rem 0.8rem; font-family: 'JetBrains Mono', monospace;
+            font-weight: bold; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;
+        }
+        .role-btn.active {
+            background: var(--text-color); color: var(--accent-color);
+            box-shadow: 3px 3px 0 var(--accent-color); transform: translate(-2px, -2px);
+        }
+        body.dark-mode .role-btn.active { background: var(--accent-color); color: #000; box-shadow: 3px 3px 0 #fff; }
 
-            role_files = []
+        h1 {
+            font-size: 2rem; font-weight: 800; text-transform: uppercase;
+            background-color: var(--accent-color); color: #000; padding: 0.5rem 1rem; 
+            border: var(--border-width) solid var(--text-color);
+            transform: perspective(1000px) rotateX(0deg) rotateY(0deg) skew(-5deg);
+            transition: all 0.3s; user-select: none; box-shadow: 8px 8px 0 rgba(0,0,0,0.2);
+            display: inline-block; cursor: pointer; max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        h1:hover {
+            background-color: #000; color: #fff; border-color: #000;
+            transform: perspective(1000px) rotateX(10deg) rotateY(-5deg) scale(1.05) skew(-5deg) translateY(-5px);
+            box-shadow: 15px 20px 0 rgba(255, 247, 0, 0.8);
+        }
+        body.dark-mode h1 { border-color: #fff; box-shadow: 8px 8px 0 rgba(255,255,255,0.2); }
 
-            for item in items:
-                print(f"Processing [{role}]: {item['name']}...")
-                
-                # フッター表示用（分かりやすいように【役割】をつける）
-                FILE_LIST_DATA.append({
-                    'name': f"【{role}】{item['name']}",
-                    'url': item.get('webViewLink', '#')
-                })
+        /* --- メイン --- */
+        #chat-container {
+            flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 1rem;
+            scroll-behavior: smooth; background-color: rgba(255, 255, 255, 0.9);
+        }
+        body.dark-mode #chat-container { background-color: rgba(20, 20, 20, 0.95); }
 
-                # ダウンロード & アップロード処理
-                request = service.files().get_media(fileId=item['id'])
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    downloader = MediaIoBaseDownload(tmp_file, request)
-                    done = False
-                    while done is False:
-                        _, done = downloader.next_chunk()
-                    tmp_path = tmp_file.name
+        .chat-message { display: flex; align-items: flex-start; max-width: 90%; animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-                try:
-                    # Geminiへアップロード
-                    uploaded_file = genai.upload_file(path=tmp_path, display_name=item['name'])
-                    
-                    # 処理待ち
-                    while uploaded_file.state.name == "PROCESSING":
-                        time.sleep(1)
-                        uploaded_file = genai.get_file(uploaded_file.name)
-                    
-                    if uploaded_file.state.name == "ACTIVE":
-                        role_files.append(uploaded_file)
-                        print(f"Upload Complete: {item['name']}")
-                    else:
-                        print(f"Upload Failed: {item['name']}")
+        .bot-message { align-self: flex-start; }
+        .user-message { align-self: flex-end; flex-direction: row-reverse; }
 
-                except Exception as upload_error:
-                    print(f"Upload Error: {upload_error}")
-                finally:
-                    if os.path.exists(tmp_path):
-                        os.remove(tmp_path)
-            
-            # 役割ごとのキャッシュに保存
-            UPLOADED_FILES_CACHE[role] = role_files
+        .bot-icon {
+            width: 40px; height: 40px; min-width: 40px;
+            border: var(--border-width) solid var(--text-color); background: var(--accent-color);
+            margin-right: 10px; object-fit: cover; border-radius: 50%;
+        }
+        .user-message .message-content { background: #000; color: #fff; box-shadow: -4px 4px 0 rgba(255,247,0,0.5); margin-right: 0; }
+        .message-content {
+            background: #fff; border: var(--border-width) solid var(--text-color);
+            padding: 0.8rem; position: relative; box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
+            font-size: 0.95rem; word-wrap: break-word; line-height: 1.6; border-radius: 4px;
+        }
+        body.dark-mode .bot-message .message-content { background: #000; color: #fff; border-color: #fff; }
+        body.dark-mode .user-message .message-content { background: var(--accent-color); color: #000; border-color: #fff; }
 
-    except Exception as e:
-        print(f"Drive Process Error: {e}")
+        /* --- 入力 --- */
+        .input-area {
+            background: var(--accent-color); border-top: var(--border-width) solid var(--text-color);
+            padding: 10px; display: flex; gap: 8px; align-items: center;
+            position: relative; z-index: 20; flex-shrink: 0; padding-bottom: max(10px, env(safe-area-inset-bottom));
+        }
+        body.dark-mode .input-area { background: #333; border-top-color: #fff; }
+        #user-input {
+            flex: 1; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 16px;
+            border: var(--border-width) solid var(--text-color); outline: none;
+            box-shadow: inset 3px 3px 0 rgba(0,0,0,0.1); border-radius: 0; -webkit-appearance: none;
+        }
+        body.dark-mode #user-input { background: #000; color: #fff; border-color: #fff; }
+        .input-area button {
+            padding: 0 15px; height: 46px; font-weight: 800; background: var(--text-color); color: #fff;
+            border: var(--border-width) solid var(--text-color); box-shadow: 3px 3px 0 #fff; cursor: pointer;
+        }
+        body.dark-mode .input-area button { background: var(--accent-color); color: #000; border-color: #fff; }
+        .input-area button:active { transform: translate(2px, 2px); box-shadow: none; }
 
-    return UPLOADED_FILES_CACHE, FILE_LIST_DATA
-
-def save_log_to_sheet(user_msg, bot_msg, role):
-    """ログ保存"""
-    try:
-        creds = get_credentials()
-        if not creds: return
-        client = gspread.authorize(creds)
-        sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        sheet.append_row([now, role, user_msg, bot_msg])
-        print("Log saved.")
-    except Exception as e:
-        print(f"Logging Error: {e}")
-
-# --- 起動時 ---
-print("System starting... Uploading files by role...")
-load_and_upload_pdfs_by_role()
-print("System Ready.")
-
-# --- Routing ---
-
-@app.route('/')
-def index():
-    return render_template('index.html', files=FILE_LIST_DATA)
-
-@app.route('/refresh')
-def refresh_data():
-    """知識の更新"""
-    print("Refreshing data...")
-    load_and_upload_pdfs_by_role()
-    return jsonify({
-        'status': 'success', 
-        'message': '知識データを更新しました！', 
-        'files': FILE_LIST_DATA
-    })
-
-@app.route('/chat', methods=['POST'])
-def chat():
-    data = request.json
-    user_message = data.get('message')
-    history_list = data.get('history', [])
-    user_role = data.get('role', '在学生') # フロントから役割を受け取る
-    
-    if not user_message:
-        return jsonify({'error': 'No message provided'}), 400
-
-    # 履歴テキスト化
-    history_text = ""
-    for chat in history_list[-4:]: 
-        role = "User" if chat['role'] == 'user' else "AI"
-        content = chat['text']
-        history_text += f"{role}: {content}\n"
-
-    # ★役割に応じたファイルを取得
-    target_files = UPLOADED_FILES_CACHE.get(user_role, [])
-
-    # 役割ごとの振る舞い設定
-    role_instruction = ""
-    if user_role == '在学生':
-        role_instruction = "相手は【在学生】です。先輩や先生のような親しみやすい口調で、学校生活のルールや行事について詳しく答えてください。"
-    elif user_role == '受験生':
-        role_instruction = "相手は【受験生】です。優しく歓迎するような口調で、入試情報や学校の魅力をアピールしてください。"
-    elif user_role == '保護者':
-        role_instruction = "相手は【保護者】です。丁寧で信頼感のある「です・ます」調で、学費や就職実績、サポート体制について答えてください。"
-
-    # システムプロンプト
-    system_instruction = f"""
-    あなたは学校の公式質問応答システムです。
-    
-    【現在の設定】
-    {role_instruction}
-    
-    【重要ルール】
-    1. 添付された資料(PDF)の内容のみを根拠に回答してください。
-    2. 資料内の「グラフ」「表」「地図」「写真」の情報も読み取って活用してください。
-    3. 推測や一般論を混ぜる場合は「資料にはありませんが…」と断りを入れてください。
-    4. 根拠とした資料名とページ数を明記してください。
-    
-    [これまでの会話]
-    """ + history_text
-
-    # AIに渡すデータ：[指示, (役割に合ったファイル達), 質問]
-    request_content = [system_instruction]
-    
-    if target_files:
-        request_content.extend(target_files)
-    else:
-        print(f"Warning: No files found for role {user_role}")
-        # ファイルがない場合でも会話だけは成立させる
-    
-    request_content.append(f"\n[ユーザーの質問]\n{user_message}")
-
-    try:
-        # 生成実行
-        response = model.generate_content(request_content)
-        bot_reply = response.text
+        /* --- フッター --- */
+        footer {
+            background: var(--text-color); color: #fff; padding: 5px 10px; font-size: 0.75rem;
+            border-top: 1px solid #fff; text-align: center; flex-shrink: 0;
+            padding-bottom: max(5px, env(safe-area-inset-bottom));
+        }
+        body.dark-mode footer { background: #000; border-top-color: #333; }
         
-        save_log_to_sheet(user_message, bot_reply, user_role)
-        
-        return jsonify({'reply': bot_reply})
-    except Exception as e:
-        print(f"Gemini Error: {e}")
-        return jsonify({'reply': 'エラーが発生しました。'}), 500
+        .file-list-container {
+            display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 3px;
+            max-height: 60px; overflow-y: auto;
+        }
+        .file-badge {
+            background: #333; color: var(--accent-color); padding: 2px 8px;
+            border: 1px solid var(--accent-color); border-radius: 4px; font-size: 0.7rem;
+            text-decoration: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+        }
 
-if __name__ == '__main__':
-    app.run(debug=True)
+        /* --- スマホ --- */
+        @media (max-width: 768px) {
+            h1 { font-size: 1.2rem; padding: 0.3rem 0.8rem; transform: skew(-5deg) !important; }
+            .back-button span { display: none; }
+            header { flex-direction: column; gap: 10px; padding-bottom: 10px; }
+            .back-button-container { position: static; transform: none; align-self: flex-start; margin-bottom: -30px; }
+            .role-container { position: static; transform: none; margin-top: 5px; width: 100%; justify-content: center; }
+            .role-btn { flex: 1; text-align: center; padding: 8px 0; }
+        }
+
+        .cursor-trail {
+            position: fixed; width: 12px; height: 12px; background-color: var(--text-color); pointer-events: none; z-index: 9990; animation: fadeOut 0.6s forwards;
+        }
+        body.dark-mode .cursor-trail { background-color: var(--accent-color); }
+    </style>
+</head>
+<body>
+
+    <div id="disclaimer-overlay">
+        <div class="disclaimer-box">
+            <div class="disclaimer-title"><i class="fas fa-exclamation-triangle"></i> 利用規約</div>
+            <div class="disclaimer-content">
+                <p><strong>[ CAUTION ]</strong> AIの回答は100%正確ではありません。</p>
+                <p><strong>[ MONITORING ]</strong> 会話データは品質向上のため記録されます。</p>
+            </div>
+            <button class="agree-button" onclick="closeDisclaimer()">AGREE & START <i class="fas fa-arrow-right"></i></button>
+        </div>
+    </div>
+
+    <header>
+        <div class="back-button-container">
+            <a href="https://www.bit.urayama.ac.jp/" class="back-button">
+                <i class="fas fa-arrow-left"></i> <span>TOP</span>
+            </a>
+        </div>
+        <h1 id="mode-toggle" title="Click to toggle Dark Mode">School Bot</h1>
+        
+        <div class="role-container">
+            <div class="role-btn active" onclick="setRole('在学生', this)">在学生</div>
+            <div class="role-btn" onclick="setRole('受験生', this)">受験生</div>
+            <div class="role-btn" onclick="setRole('保護者', this)">保護者</div>
+        </div>
+    </header>
+
+    <main id="chat-container">
+        <div class="chat-message bot-message">
+            <img src="{{ url_for('static', filename='bitboticon.png') }}" onerror="this.style.display='none'" alt="Bot Icon" class="bot-icon">
+            <div class="message-content">
+                こんにちは！右上のタブで立場を選んでください。それに合わせた資料で回答します。<br>
+                <strong>[SYSTEM READY]</strong>
+            </div>
+        </div>
+    </main>
+
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="質問を入力..." onkeypress="handleKeyPress(event)">
+        <button onclick="sendMessage()">送信</button>
+    </div>
+
+    <footer>
+        <p>SOURCE FILES:</p>
+        <div class="file-list-container">
+            {% for file in files %}
+                <a href="{{ file.url }}" target="_blank" class="file-badge" data-role="{{ file.role }}">
+                    <i class="far fa-file-pdf"></i> {{ file.name }}
+                </a>
+            {% else %}
+                <span>NO DATA</span>
+            {% endfor %}
+        </div>
+    </footer>
+
+    <script>
+        function closeDisclaimer() {
+            const overlay = document.getElementById('disclaimer-overlay');
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.visibility = 'hidden'; }, 500);
+        }
+
+        const modeToggle = document.getElementById('mode-toggle');
+        modeToggle.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+        });
+
+        let lastTrailTime = 0;
+        if (window.matchMedia("(min-width: 768px)").matches) {
+            document.addEventListener('mousemove', (e) => {
+                const now = Date.now();
+                if (now - lastTrailTime < 25) return;
+                lastTrailTime = now;
+                const trail = document.createElement('div');
+                trail.className = 'cursor-trail';
+                trail.style.left = e.clientX + 'px';
+                trail.style.top = e.clientY + 'px';
+                document.body.appendChild(trail);
+                setTimeout(() => { trail.remove(); }, 600);
+            });
+        }
+
+        // --- 役割切り替えロジック ---
+        let currentRole = '在学生';
+
+        function setRole(role, element) {
+            currentRole = role;
+            document.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            
+            // ★フッターのファイル表示を切り替える処理
+            filterFiles(role);
+        }
+        
+        function filterFiles(role) {
+            const badges = document.querySelectorAll('.file-badge');
+            badges.forEach(badge => {
+                // 属性(data-role)が現在のroleと一致するかチェック
+                if (badge.dataset.role === role) {
+                    badge.style.display = 'inline-flex';
+                } else {
+                    badge.style.display = 'none';
+                }
+            });
+        }
+
+        // 初期表示時にフィルタリング実行
+        document.addEventListener('DOMContentLoaded', () => {
+            filterFiles(currentRole);
+        });
+
+        // --- Chat Logic ---
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        let conversationHistory = [];
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') sendMessage();
+        }
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (text === '') return;
+
+            addMessage(text, 'user');
+            userInput.value = '';
+            const loadingId = addLoadingIndicator();
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        message: text, 
+                        history: conversationHistory,
+                        role: currentRole 
+                    }),
+                });
+
+                const data = await response.json();
+                removeLoadingIndicator(loadingId);
+
+                if (data.reply) {
+                    addMessage(data.reply, 'bot');
+                    conversationHistory.push({role: 'user', text: text});
+                    conversationHistory.push({role: 'bot', text: data.reply});
+                } else {
+                    addMessage('エラーが発生しました。', 'bot');
+                }
+
+            } catch (error) {
+                removeLoadingIndicator(loadingId);
+                addMessage('通信エラーが発生しました。', 'bot');
+            }
+        }
+
+        function addMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${sender}-message`;
+            let iconHtml = sender === 'bot' ? `<img src="{{ url_for('static', filename='bitboticon.png') }}" class="bot-icon" onerror="this.style.display='none'">` : '';
+            const safeText = text.replace(/\n/g, '<br>');
+            messageDiv.innerHTML = `${iconHtml}<div class="message-content">${safeText}</div>`;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function addLoadingIndicator() {
+            const id = 'loading-' + Date.now();
+            const div = document.createElement('div');
+            div.className = 'chat-message bot-message';
+            div.id = id;
+            div.innerHTML = `<img src="{{ url_for('static', filename='bitboticon.png') }}" class="bot-icon"><div class="message-content" style="font-style:italic; color:#666;"><i class="fas fa-circle-notch fa-spin"></i> Thinking...</div>`;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return id;
+        }
+
+        function removeLoadingIndicator(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+        
+        window.addEventListener('resize', () => {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        });
+    </script>
+</body>
+</html>
